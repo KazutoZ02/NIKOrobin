@@ -1,152 +1,142 @@
 const express = require('express');
 const router = express.Router();
-const protect = require('../middleware/protected');
+const { protect } = require('../middleware/protected');
 const asyncHandler = require('../middleware/asyncHandler');
-const Order = require('../models/Order');
+const { paymentLimiter } = require('../middleware/rateLimiter');
 const { createRazorpayOrder, verifyRazorpayPayment } = require('../utils/razorpay');
 const { createPayPalOrder, capturePayPalOrder } = require('../utils/paypal');
+const Order = require('../models/Order');
 
 // Create Razorpay order
-router.post('/razorpay/create', protect, asyncHandler(async (req, res) => {
-  const { orderId } = req.body;
+router.post('/razorpay/create', protect, paymentLimiter, asyncHandler(async (req, res) => {
+  const { orderId, amount, currency } = req.body;
 
   const order = await Order.findById(orderId);
   if (!order) {
     return res.status(404).json({
       success: false,
-      error: 'Order not found'
+      message: 'Order not found'
     });
   }
 
-  if (order.userId.toString() !== req.user._id.toString()) {
-    return res.status(403).json({
-      success: false,
-      error: 'Not authorized'
-    });
-  }
+  const razorpayOrder = await createRazorpayOrder({
+    amount: Math.round(amount * 100), // Convert to paise
+    currency: currency === 'INR' ? 'INR' : 'USD',
+    receipt: order._id.toString(),
+    notes: {
+      orderId: order._id.toString(),
+      userId: req.user.discordId,
+      internalOrderId: `ROYAL_${order._id.toString()}`
+    }
+  });
 
-  const razorpayOrder = await createRazorpayOrder(order.amount, order.currency, order._id.toString());
-
+  // Update order with razorpay order ID
   order.razorpayOrderId = razorpayOrder.id;
   await order.save();
 
   res.json({
     success: true,
-    data: {
-      orderId: razorpayOrder.id,
-      amount: razorpayOrder.amount,
-      currency: razorpayOrder.currency,
-      key: process.env.RAZORPAY_KEY_ID
-    }
+    order: razorpayOrder,
+    keyId: process.env.RAZORPAY_KEY_ID
   });
 }));
 
 // Verify Razorpay payment
 router.post('/razorpay/verify', protect, asyncHandler(async (req, res) => {
-  const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+  const { razorpayOrderId, razorpayPaymentId, razorpaySignature, orderId } = req.body;
 
-  const isValid = verifyRazorpayPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+  const isValid = await verifyRazorpayPayment({
+    razorpayOrderId,
+    razorpayPaymentId,
+    razorpaySignature,
+    orderId
+  });
 
   if (!isValid) {
     return res.status(400).json({
       success: false,
-      error: 'Invalid payment signature'
+      message: 'Payment verification failed'
     });
   }
 
-  const order = await Order.findOne({ razorpayOrderId });
-  if (!order) {
-    return res.status(404).json({
-      success: false,
-      error: 'Order not found'
-    });
+  const order = await Order.findById(orderId);
+  if (order) {
+    order.paymentId = razorpayPaymentId;
+    order.status = 'paid';
+    order.paymentDetails = {
+      method: 'razorpay',
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature
+    };
+    await order.save();
   }
-
-  order.status = 'paid';
-  order.paymentId = razorpayPaymentId;
-  order.paymentDetails = { razorpayPaymentId, razorpaySignature };
-  await order.save();
 
   res.json({
     success: true,
-    data: order
+    message: 'Payment verified successfully',
+    order
   });
 }));
 
 // Create PayPal order
-router.post('/paypal/create', protect, asyncHandler(async (req, res) => {
-  const { orderId } = req.body;
+router.post('/paypal/create', protect, paymentLimiter, asyncHandler(async (req, res) => {
+  const { orderId, amount, currency } = req.body;
 
   const order = await Order.findById(orderId);
   if (!order) {
     return res.status(404).json({
       success: false,
-      error: 'Order not found'
+      message: 'Order not found'
     });
   }
 
-  if (order.userId.toString() !== req.user._id.toString()) {
-    return res.status(403).json({
-      success: false,
-      error: 'Not authorized'
-    });
-  }
+  const paypalOrder = await createPayPalOrder({
+    amount: amount.toFixed(2),
+    currency: currency === 'USD' ? 'USD' : 'USD',
+    orderId: order._id.toString()
+  });
 
-  const amount = order.currency === 'USD' 
-    ? (order.amount / 83).toFixed(2) 
-    : (order.amount / 83 / 1.05).toFixed(2);
-
-  const paypalOrder = await createPayPalOrder(amount);
-
+  // Update order with PayPal order ID
   order.paypalOrderId = paypalOrder.id;
   await order.save();
 
   res.json({
     success: true,
-    data: {
-      orderId: paypalOrder.id,
-      approveUrl: paypalOrder.links.find(link => link.rel === 'approve').href
-    }
+    order: paypalOrder
   });
 }));
 
 // Capture PayPal order
 router.post('/paypal/capture', protect, asyncHandler(async (req, res) => {
-  const { paypalOrderId } = req.body;
+  const { paypalOrderId, orderId } = req.body;
 
-  const order = await Order.findOne({ paypalOrderId });
-  if (!order) {
-    return res.status(404).json({
+  const captureData = await capturePayPalOrder(paypalOrderId);
+
+  if (captureData.status !== 'COMPLETED') {
+    return res.status(400).json({
       success: false,
-      error: 'Order not found'
+      message: 'Payment not completed'
     });
   }
 
-  if (order.userId.toString() !== req.user._id.toString()) {
-    return res.status(403).json({
-      success: false,
-      error: 'Not authorized'
-    });
-  }
-
-  const capture = await capturePayPalOrder(paypalOrderId);
-
-  if (capture.status === 'COMPLETED') {
+  const order = await Order.findById(orderId);
+  if (order) {
+    order.paymentId = captureData.purchase_units[0].payments.captures[0].id;
     order.status = 'paid';
-    order.paymentId = capture.id;
-    order.paymentDetails = capture;
+    order.paymentDetails = {
+      method: 'paypal',
+      paypalOrderId,
+      captureId: captureData.purchase_units[0].payments.captures[0].id
+    };
     await order.save();
-
-    res.json({
-      success: true,
-      data: order
-    });
-  } else {
-    res.status(400).json({
-      success: false,
-      error: 'Payment not completed'
-    });
   }
+
+  res.json({
+    success: true,
+    message: 'Payment captured successfully',
+    order
+  });
 }));
 
 module.exports = router;
