@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
   discordId: {
@@ -15,25 +16,24 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
-  discriminator: {
-    type: String,
-    default: '0'
-  },
   role: {
     type: String,
-    enum: ['user', 'admin', 'vip'],
+    enum: ['user', 'admin', 'moderator'],
     default: 'user'
   },
-  isMember: {
+  accessToken: String,
+  refreshToken: String,
+  isPremium: {
     type: Boolean,
     default: false
   },
-  memberSince: {
-    type: Date,
-    default: null
-  }
+  premiumSince: Date,
+  premiumExpiresAt: Date
 }, {
   timestamps: true
 });
+
+// Index for faster queries
+userSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('User', userSchema);
