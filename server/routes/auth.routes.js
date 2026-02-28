@@ -1,49 +1,51 @@
 const express = require('express');
 const router = express.Router();
 const passport = require('passport');
+const { authLimiter } = require('../middleware/rateLimiter');
+const { protect } = require('../middleware/protected');
 const asyncHandler = require('../middleware/asyncHandler');
 
-// Discord OAuth
-router.get('/discord', passport.authenticate('discord'));
+// Discord OAuth routes
+router.get('/discord', authLimiter, passport.authenticate('discord', { scope: ['identify'] }));
 
-router.get(
-  '/discord/callback',
-  passport.authenticate('discord', { failureRedirect: '/' }),
-  asyncHandler(async (req, res) => {
-    // Successful authentication
-    res.redirect(process.env.CLIENT_URL || 'http://localhost:5173');
+router.get('/discord/callback',
+  authLimiter,
+  passport.authenticate('discord', { 
+    failureRedirect: '/?error=auth_failed',
+    successRedirect: '/dashboard'
   })
 );
 
-// Logout
-router.get('/logout', (req, res) => {
-  req.logout(() => {
-    res.redirect(process.env.CLIENT_URL || 'http://localhost:5173');
-  });
-});
-
 // Get current user
-router.get('/me', asyncHandler(async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({
-      success: false,
-      error: 'Not authenticated'
-    });
-  }
-
+router.get('/me', protect, asyncHandler(async (req, res) => {
   res.json({
     success: true,
-    data: {
+    user: {
       id: req.user._id,
       discordId: req.user.discordId,
       username: req.user.username,
       avatar: req.user.avatar,
-      discriminator: req.user.discriminator,
       role: req.user.role,
-      isMember: req.user.isMember,
-      memberSince: req.user.memberSince
+      isPremium: req.user.isPremium,
+      premiumExpiresAt: req.user.premiumExpiresAt
     }
   });
 }));
+
+// Logout
+router.get('/logout', (req, res) => {
+  req.logout((err) => {
+    if (err) {
+      return res.status(500).json({
+        success: false,
+        message: 'Logout failed'
+      });
+    }
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  });
+});
 
 module.exports = router;
