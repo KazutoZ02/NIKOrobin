@@ -11,25 +11,24 @@ const orderSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  service: {
+  username: {
     type: String,
     required: true
   },
-  game: {
-    type: String,
-    required: true
-  },
-  description: {
-    type: String,
-    default: ''
-  },
-  amount: {
+  services: [{
+    serviceId: String,
+    name: String,
+    game: String,
+    price: Number,
+    currency: String,
+    quantity: {
+      type: Number,
+      default: 1
+    }
+  }],
+  totalAmount: {
     type: Number,
     required: true
-  },
-  originalAmount: {
-    type: Number,
-    default: 0
   },
   currency: {
     type: String,
@@ -43,27 +42,27 @@ const orderSchema = new mongoose.Schema({
   },
   paymentId: {
     type: String,
-    default: null
+    required: true
   },
-  razorpayOrderId: {
-    type: String,
-    default: null
-  },
-  paypalOrderId: {
-    type: String,
-    default: null
-  },
+  razorpayOrderId: String,
+  paypalOrderId: String,
   status: {
     type: String,
     enum: ['pending', 'paid', 'failed', 'refunded'],
     default: 'pending'
   },
   paymentDetails: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
+    email: String,
+    contact: String,
+    method: String
   }
 }, {
   timestamps: true
 });
+
+// Indexes
+orderSchema.index({ createdAt: -1 });
+orderSchema.index({ status: 1 });
+orderSchema.index({ discordId: 1 });
 
 module.exports = mongoose.model('Order', orderSchema);
