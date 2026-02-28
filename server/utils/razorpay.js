@@ -1,50 +1,56 @@
+const Razorpay = require('razorpay');
 const crypto = require('crypto');
-const axios = require('axios');
+const Order = require('../models/Order');
 
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
-
-const razorpay = axios.create({
-  baseURL: 'https://api.razorpay.com/v1',
-  auth: {
-    username: RAZORPAY_KEY_ID,
-    password: RAZORPAY_KEY_SECRET
-  }
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET
 });
 
-const createRazorpayOrder = async (amount, currency, orderId) => {
+const createRazorpayOrder = async ({ amount, currency, receipt, notes }) => {
   try {
-    const response = await razorpay.post('/orders', {
-      amount: Math.round(amount * 100), // Convert to paise
-      currency: currency === 'INR' ? 'INR' : 'USD',
-      notes: {
-        internalOrderId: orderId
-      }
+    const order = await razorpay.orders.create({
+      amount,
+      currency,
+      receipt,
+      notes
     });
-
-    return response.data;
+    return order;
   } catch (error) {
-    console.error('[Razorpay] Create order error:', error.response?.data || error.message);
+    console.error('Razorpay Order Creation Error:', error);
     throw new Error('Failed to create Razorpay order');
   }
 };
 
-const verifyRazorpayPayment = (razorpayOrderId, razorpayPaymentId, razorpaySignature) => {
+const verifyRazorpayPayment = async ({ razorpayOrderId, razorpayPaymentId, razorpaySignature, orderId }) => {
   try {
-    const body = razorpayOrderId + '|' + razorpayPaymentId;
-    const expectedSignature = crypto
-      .createHmac('sha256', RAZORPAY_KEY_SECRET)
-      .update(body)
+    // Verify signature
+    const generatedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(`${razorpayOrderId}|${razorpayPaymentId}`)
       .digest('hex');
 
-    return razorpaySignature === expectedSignature;
+    if (generatedSignature !== razorpaySignature) {
+      console.error('❌ Signature mismatch');
+      return false;
+    }
+
+    // Verify order exists
+    const order = await Order.findById(orderId);
+    if (!order || order.razorpayOrderId !== razorpayOrderId) {
+      console.error('❌ Order mismatch');
+      return false;
+    }
+
+    return true;
   } catch (error) {
-    console.error('[Razorpay] Verify error:', error.message);
+    console.error('Razorpay Verification Error:', error);
     return false;
   }
 };
 
 module.exports = {
   createRazorpayOrder,
-  verifyRazorpayPayment
+  verifyRazorpayPayment,
+  razorpay
 };
