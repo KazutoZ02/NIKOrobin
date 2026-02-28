@@ -1,65 +1,79 @@
 const express = require('express');
 const router = express.Router();
-const protect = require('../middleware/protected');
+const { protect } = require('../middleware/protected');
 const asyncHandler = require('../middleware/asyncHandler');
 const Order = require('../models/Order');
 
-// Get all orders (admin only in future)
-router.get('/', protect, asyncHandler(async (req, res) => {
-  const orders = await Order.find()
-    .populate('userId', 'username avatar discordId')
-    .sort({ createdAt: -1 });
-
-  res.json({
-    success: true,
-    data: orders
-  });
-}));
-
-// Get single order
-router.get('/:id', protect, asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id);
-
-  if (!order) {
-    return res.status(404).json({
-      success: false,
-      error: 'Order not found'
-    });
-  }
-
-  // Check ownership
-  if (order.userId.toString() !== req.user._id.toString()) {
-    return res.status(403).json({
-      success: false,
-      error: 'Not authorized'
-    });
-  }
-
-  res.json({
-    success: true,
-    data: order
-  });
-}));
-
 // Create order
 router.post('/', protect, asyncHandler(async (req, res) => {
-  const { service, game, description, amount, currency, paymentMethod } = req.body;
+  const { services, totalAmount, currency, paymentMethod } = req.body;
+
+  if (!services || services.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'No services provided'
+    });
+  }
 
   const order = await Order.create({
     userId: req.user._id,
     discordId: req.user.discordId,
-    service,
-    game,
-    description,
-    amount,
+    username: req.user.username,
+    services,
+    totalAmount,
     currency,
     paymentMethod,
+    paymentId: `temp_${Date.now()}`,
     status: 'pending'
   });
 
   res.status(201).json({
     success: true,
-    data: order
+    order
+  });
+}));
+
+// Get order by ID
+router.get('/:id', protect, asyncHandler(async (req, res) => {
+  const order = await Order.findOne({
+    _id: req.params.id,
+    discordId: req.user.discordId
+  });
+
+  if (!order) {
+    return res.status(404).json({
+      success: false,
+      message: 'Order not found'
+    });
+  }
+
+  res.json({
+    success: true,
+    order
+  });
+}));
+
+// Get all orders (admin)
+router.get('/', protect, asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, status } = req.query;
+  
+  const query = {};
+  if (status) query.status = status;
+
+  const orders = await Order.find(query)
+    .populate('userId', 'username avatar discordId')
+    .sort({ createdAt: -1 })
+    .limit(limit * 1)
+    .skip((page - 1) * limit);
+
+  const count = await Order.countDocuments(query);
+
+  res.json({
+    success: true,
+    orders,
+    totalPages: Math.ceil(count / limit),
+    currentPage: page,
+    totalOrders: count
   });
 }));
 
