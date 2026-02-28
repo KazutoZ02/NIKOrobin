@@ -1,23 +1,30 @@
-// server/middleware/errorHandler.js
 const errorHandler = (err, req, res, next) => {
-  console.error('[Error]', err.message);
-  console.error(err.stack);
+  console.error('Error:', err);
 
   // Mongoose validation error
   if (err.name === 'ValidationError') {
     const messages = Object.values(err.errors).map(e => e.message);
     return res.status(400).json({
       success: false,
-      error: messages.join(', ')
+      message: 'Validation Error',
+      errors: messages
     });
   }
 
-  // Mongoose duplicate key error
+  // Mongoose duplicate key
   if (err.code === 11000) {
     const field = Object.keys(err.keyValue)[0];
     return res.status(400).json({
       success: false,
-      error: `${field} already exists`
+      message: `${field} already exists`
+    });
+  }
+
+  // Mongoose cast error (invalid ObjectId)
+  if (err.name === 'CastError') {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid ID format'
     });
   }
 
@@ -25,16 +32,14 @@ const errorHandler = (err, req, res, next) => {
   if (err.name === 'JsonWebTokenError') {
     return res.status(401).json({
       success: false,
-      error: '401. For invalid token, use 403
-      // Actually let's just use generic message
-      error: 'Invalid token'
+      message: 'Invalid token'
     });
   }
 
   if (err.name === 'TokenExpiredError') {
     return res.status(401).json({
       success: false,
-      error: 'Token expired'
+      message: 'Token expired'
     });
   }
 
@@ -46,7 +51,8 @@ const errorHandler = (err, req, res, next) => {
 
   res.status(statusCode).json({
     success: false,
-    error: message
+    message,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };
 
