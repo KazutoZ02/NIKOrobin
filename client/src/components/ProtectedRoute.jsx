@@ -1,24 +1,25 @@
-import { Navigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { motion } from 'framer-motion';
+import { Navigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/';
+
+const';
+
+const.d.ts';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
       <div className="loading-screen">
-        <motion.div 
-          className="loading-spinner"
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-        />
+        <div className="loading-spinner"></div>
+        <p>Loading...</p>
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/" state={{ from: location }} replace />;
   }
 
   return children;
