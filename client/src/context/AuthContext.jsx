@@ -23,7 +23,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await api.get('/auth/me');
       if (response.data.success) {
-        setUser(response.data.data);
+        setUser(response.data.user);
       }
     } catch (error) {
       setUser(null);
@@ -32,19 +32,26 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = () => {
+  const loginWithDiscord = () => {
     window.location.href = '/api/auth/discord';
   };
 
-  const logout = () => {
-    window.location.href = '/api/auth/logout';
+  const logout = async () => {
+    try {
+      await api.get('/auth/logout');
+      setUser(null);
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   const value = {
     user,
     loading,
-    login,
+    loginWithDiscord,
     logout,
+    checkAuth,
     isAuthenticated: !!user
   };
 
