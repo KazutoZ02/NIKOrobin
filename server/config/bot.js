@@ -5,88 +5,123 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
-  ],
-  rest: { timeout: 30000 }
+  ]
 });
 
 let isReady = false;
 
-const initializeBot = async () => {
-  if (!process.env.DISCORD_BOT_TOKEN) {
-    console.log('[Bot] No bot token provided, skipping bot initialization');
-    return;
-  }
-
-  try {
-    await client.login(process.env.DISCORD_BOT_TOKEN);
-    console.log(`[Bot] Logged in as ${client.user.tag}`);
-    isReady = true;
-  } catch (error) {
-    console.error('[Bot] Login failed:', error.message);
-  }
-};
-
 client.on('ready', () => {
-  console.log(`[Bot] ${client.user.tag} is ready!`);
   isReady = true;
+  console.log(`🤖 Discord Bot logged in as: ${client.user.tag}`);
+  console.log(`📍 Payment Channel ID: ${process.env.DISCORD_PAYMENT_CHANNEL_ID}`);
+});
+
+client.on('disconnect', () => {
+  isReady = false;
+  console.warn('⚠️ Bot disconnected. Attempting to reconnect...');
+});
+
+client.on('reconnecting', () => {
+  console.log('🔄 Bot reconnecting...');
 });
 
 client.on('error', (error) => {
-  console.error('[Bot] Error:', error.message);
-});
-
-client.on('shardError', (error, shardId) => {
-  console.error(`[Bot] Shard ${shardId} error:`, error.message);
+  console.error('❌ Discord Bot Error:', error);
 });
 
 // Function to send payment confirmation embed
 const sendPaymentEmbed = async (paymentData) => {
-  if (!isReady || !client.isReady()) {
-    console.log('[Bot] Client not ready, queuing embed');
-    return;
+  if (!isReady) {
+    console.warn('⚠️ Bot not ready, cannot send embed');
+    return false;
   }
 
-  const channelId = process.env.DISCORD_PAYMENT_CHANNEL_ID;
-  if (!channelId) {
-    console.log('[Bot] No payment channel configured');
-    return;
-  }
+  const {
+    username,
+    discordId,
+    avatar,
+    serviceName,
+    game,
+    amount,
+    currency,
+    paymentMethod,
+    paymentId
+  } = paymentData;
 
-  const channel = client.channels.cache.get(channelId);
+  const channel = client.channels.cache.get(process.env.DISCORD_PAYMENT_CHANNEL_ID);
+  
   if (!channel) {
-    console.log('[Bot] Payment channel not found');
-    return;
+    console.error('❌ Payment channel not found');
+    return false;
   }
-
-  const { user, service, game, amount, currency, paymentMethod } = paymentData;
 
   const embed = new EmbedBuilder()
     .setTitle('👑 Royal Paradise Payment Confirmed')
-    .setColor(0xff69b4)
-    .setThumbnail(user.avatar ? `https://cdn.discordapp.com/avatars/${user.discordId}/${user.avatar}.png` : null)
+    .setColor(0x9b59b6) // Purple color
+    .setThumbnail(avatar || null)
+    .setImage(process.env.WEBSITE背景_IMAGE_URL || null)
     .addFields(
-      { name: 'User', value: `[${user.username}](https://discord.com/users/${user.discordId})`, inline: true },
-      { name: 'Service', value: service, inline: true },
-      { name: 'Game', value: game, inline: true },
-      { name: 'Amount', value: `${currency === 'INR' ? '₹' : '$'}${amount}`, inline: true },
-      { name: 'Payment Method', value: paymentMethod, inline: true },
-      { name: 'Verification', value: '✅ Paid', inline: true }
+      {
+        name: '👤 User',
+        value: `[${username}](https://discord.com/users/${discordId})`,
+        inline: true
+      },
+      {
+        name: '🎮 Service',
+        value: serviceName,
+        inline: true
+      },
+      {
+        name: '🎯 Game',
+        value: game,
+        inline: true
+      },
+      {
+        name: '💰 Amount',
+        value: currency === 'INR' ? `₹${amount}` : `$${amount}`,
+        inline: true
+      },
+      {
+        name: '💳 Payment Method',
+        value: paymentMethod,
+        inline: true
+      },
+      {
+        name: '🔔 Payment ID',
+        value: `\`${paymentId}\``,
+        inline: true
+      },
+      {
+        name: '✅ Verification',
+        value: '**PAID**',
+        inline: false
+      }
     )
-    .setFooter({ text: 'Royal\'s Paradise 💕' })
-    .setTimestamp();
-
-  // Add background image if available
-  const backgroundUrl = process.env.BACKGROUND_IMAGE_URL;
-  if (backgroundUrl) {
-    embed.setImage(backgroundUrl);
-  }
+    .setTimestamp()
+    .setFooter({
+      text: 'Royal\'s Paradise • Premium Gaming Services',
+      iconURL: client.user.displayAvatarURL()
+    });
 
   try {
     await channel.send({ embeds: [embed] });
-    console.log(`[Bot] Payment embed sent for user: ${user.username}`);
+    console.log(`✅ Payment embed sent for user: ${username}`);
+    return true;
   } catch (error) {
-    console.error('[Bot] Failed to send embed:', error.message);
+    console.error('❌ Failed to send payment embed:', error);
+    return false;
   }
 };
 
-module.exports = { client, initializeBot, sendPaymentEmbed };
+// Start the bot
+const startBot = () => {
+  if (process.env.DISCORD_BOT_TOKEN) {
+    client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
+      console.error('❌ Failed to login bot:', err);
+    });
+  } else {
+    console.warn('⚠️ Discord Bot Token not provided. Bot will not start.');
+  }
+};
+
+module.exports = { startBot, sendPaymentEmbed, client };
