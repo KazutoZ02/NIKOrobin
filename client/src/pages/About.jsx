@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion';
-import './About.css';
 
 const teamMembers = [
   {
@@ -7,14 +6,16 @@ const teamMembers = [
     role: 'Founder',
     games: ['Genshin Impact', 'WuWa', 'Honkai Star Rail'],
     avatar: '/images/founder.jpg',
-    quote: 'Building the future of gaming services.'
+    discord: 'royald_subro',
+    quote: 'Building dreams into reality, one service at a time.'
   },
   {
-    name: 'Kazuto',
+    name: 'Kazuto ;)',
     role: 'Owner',
     games: ['Honkai Star Rail', 'Dragon Ball Legends'],
     avatar: '/images/owner.jpg',
-    quote: 'Excellence in every detail.'
+    discord: 'kazuto_official',
+    quote: 'Excellence is not a destination, but a continuous journey.'
   }
 ];
 
@@ -22,4 +23,38 @@ const games = [
   {
     name: 'Genshin Impact',
     image: '/images/genshin.jpg',
-    description
+    description: 'Explore the vast world of Teyvat with our premium exploration services.',
+    rating: 5,
+    active: true
+  },
+  {
+    name: 'Honkai Star Rail',
+    image: '/images/hsr.jpg',
+    description: 'Embark on a journey across the stars with expert guidance.',
+    rating: 5,
+    active: true
+  },
+  {
+    name: 'Wuthering Waves',
+    image: '/images/wuwa.jpg',
+    description: 'Discover the mysteries of the new open-world adventure.',
+    rating: 4.5,
+    active: true
+  },
+  {
+    name: 'Dragon Ball Legends',
+    image: '/images/dbl.jpg',
+    description: 'Master the art of combat with our legendary support services.',
+    rating: 4,
+    active: true
+  }
+];
+
+const About = () => {
+  return (
+    <motion.div 
+      className="about-page"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{
