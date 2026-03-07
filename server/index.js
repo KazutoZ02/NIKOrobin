@@ -53,12 +53,18 @@ if (fs.existsSync(eventsPath)) {
 }
 
 // Check configuration before logging in
+console.log(`[Startup] Discord Token present: ${!!config.discordToken}`);
 if (!config.discordToken) {
     console.error("CRITICAL ERROR: No Discord token found in configuration. Bot cannot start.");
     process.exit(1);
 }
 
 // Login
-client.login(config.discordToken).catch(err => {
-    console.error("[Login Error]", err);
-});
+console.log("[Startup] Attempting to log in to Discord...");
+client.login(config.discordToken)
+    .then(() => {
+        console.log("[Startup] Login call successful (Promise resolved)");
+    })
+    .catch(err => {
+        console.error("[Login Error]", err);
+    });
