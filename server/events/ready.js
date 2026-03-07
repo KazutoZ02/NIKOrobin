@@ -9,6 +9,7 @@ module.exports = {
 
         // Register slash commands on ready
         if (config.clientId && config.discordToken && config.guildId) {
+            console.log(`[Command Registration] Using Client ID: ${config.clientId} and Guild ID: ${config.guildId}`);
             const rest = new REST({ version: '10' }).setToken(config.discordToken);
             const commandsData = client.commands.map(command => command.data.toJSON());
 
@@ -26,6 +27,7 @@ module.exports = {
             }
         } else {
             console.warn(`[Command Registration Warning] Missing clientId, discordToken or guildId in environment variables. Commands not registered.`);
+            console.log(`[Startup Debug] clientId: ${!!config.clientId}, token: ${!!config.discordToken}, guildId: ${!!config.guildId}`);
         }
     },
 };

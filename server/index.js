@@ -52,8 +52,20 @@ if (fs.existsSync(eventsPath)) {
     }
 }
 
+// Global Error Handlers to catch silent crashes
+process.on('unhandledRejection', error => {
+    console.error('[Unhandled Rejection]', error);
+});
+
+process.on('uncaughtException', error => {
+    console.error('[Uncaught Exception]', error);
+});
+
 // Check configuration before logging in
 console.log(`[Startup] Discord Token present: ${!!config.discordToken}`);
+console.log(`[Startup] Client ID: ${config.clientId || 'Not Set'}`);
+console.log(`[Startup] Guild ID: ${config.guildId || 'Not Set'}`);
+
 if (!config.discordToken) {
     console.error("CRITICAL ERROR: No Discord token found in configuration. Bot cannot start.");
     process.exit(1);
@@ -66,5 +78,15 @@ client.login(config.discordToken)
         console.log("[Startup] Login call successful (Promise resolved)");
     })
     .catch(err => {
-        console.error("[Login Error]", err);
+        console.error("[Startup Login Error]", err);
     });
+
+// Monitor client errors
+client.on('error', error => {
+    console.error('[Discord Client Error]', error);
+});
+
+client.on('debug', info => {
+    // Uncomment for very verbose discord.js internal logs
+    // console.log('[Discord Debug]', info);
+});
