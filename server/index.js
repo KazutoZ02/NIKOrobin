@@ -1,34 +1,32 @@
-const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
-const config = require('./config');
-const keepAlive = require('./keep_alive');
+require('dotenv').config();
+const express = require('express');
+const axios = require('axios');
+const { Client, GatewayIntentBits, Partials, Collection, REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits, PermissionsBitField, ChannelType, Events } = require('discord.js');
 
-// Global Error Handlers
-process.on('unhandledRejection', error => {
-    console.error('[Unhandled Rejection]', error);
-});
-process.on('uncaughtException', error => {
-    console.error('[Uncaught Exception]', error);
-});
+// ==================== CONFIG ====================
+const TOKEN = (process.env.DISCORD_TOKEN || '').trim();
+const CLIENT_ID = (process.env.CLIENT_ID || '').trim();
+const GUILD_ID = (process.env.GUILD_ID || '').trim();
+const TICKET_CATEGORY_ID = (process.env.TICKET_CATEGORY_ID || '').trim();
+const SUPPORT_ROLE_ID = (process.env.SUPPORT_ROLE_ID || '').trim();
+const USER_ROLE_ID = (process.env.USER_ROLE_ID || '').trim();
+const BOT_ROLE_ID = (process.env.BOT_ROLE_ID || '').trim();
+const RENDER_URL = (process.env.RENDER_EXTERNAL_URL || '').trim();
+const PORT = process.env.PORT || 3000;
 
-// 1. Start Express keep-alive web server for Render
-keepAlive();
+// ==================== EXPRESS KEEP-ALIVE ====================
+const app = express();
+app.get('/', (req, res) => res.send('Bot is running!'));
+app.listen(PORT, () => console.log(`Web server on port ${PORT}`));
 
-// 2. Diagnostics
-console.log('========== STARTUP DIAGNOSTICS ==========');
-console.log(`discord.js: ${require('discord.js').version} | Node: ${process.version}`);
-console.log(`Token: present=${!!config.discordToken} length=${config.discordToken ? config.discordToken.length : 0}`);
-console.log(`Client ID: ${config.clientId || 'NOT SET'}`);
-console.log(`Guild ID: ${config.guildId || 'NOT SET'}`);
-console.log('==========================================');
-
-if (!config.discordToken) {
-    console.error("FATAL: DISCORD_TOKEN is not set. Exiting.");
-    process.exit(1);
+// Self-ping every 14 minutes
+if (RENDER_URL) {
+    setInterval(() => {
+        axios.get(RENDER_URL).catch(() => { });
+    }, 14 * 60 * 1000);
 }
 
-// 3. Initialize Discord Client
+// ==================== DISCORD CLIENT ====================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -39,90 +37,134 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
 
-client.commands = new Collection();
+// ==================== READY EVENT ====================
+client.once(Events.ClientReady, async (c) => {
+    console.log(`✓ Logged in as ${c.user.tag}`);
 
-// 4. Load Commands
-const commandsPath = path.join(__dirname, 'commands');
-if (fs.existsSync(commandsPath)) {
-    const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
-    for (const file of commandFiles) {
-        const filePath = path.join(commandsPath, file);
-        const command = require(filePath);
-        if ('data' in command && 'execute' in command) {
-            client.commands.set(command.data.name, command);
-            console.log(`[Commands] Loaded: ${command.data.name}`);
-        }
-    }
-}
-
-// 5. Load Events
-const eventsPath = path.join(__dirname, 'events');
-if (fs.existsSync(eventsPath)) {
-    const eventFiles = fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'));
-    for (const file of eventFiles) {
-        const filePath = path.join(eventsPath, file);
-        const event = require(filePath);
-        if (event.once) {
-            client.once(event.name, (...args) => event.execute(...args));
-        } else {
-            client.on(event.name, (...args) => event.execute(...args));
-        }
-        console.log(`[Events] Loaded: ${event.name}`);
-    }
-}
-
-// 6. Client event listeners
-client.on('error', error => console.error('[Client Error]', error));
-client.on('warn', warning => console.warn('[Client Warn]', warning));
-
-// 7. Login with timeout and retry
-async function loginWithRetry(maxRetries = 5) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        console.log(`[Login] Attempt ${attempt}/${maxRetries}...`);
+    // Register slash commands
+    if (CLIENT_ID && GUILD_ID) {
+        const rest = new REST({ version: '10' }).setToken(TOKEN);
+        const commands = [
+            new SlashCommandBuilder()
+                .setName('setup-ticket')
+                .setDescription('Creates the ticket panel in this channel.')
+                .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+                .toJSON()
+        ];
 
         try {
-            // Race between login and a 30-second timeout
-            await Promise.race([
-                client.login(config.discordToken),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('LOGIN_TIMEOUT')), 30000)
-                )
-            ]);
-
-            console.log(`[Login] ✓ SUCCESS! Bot is online as ${client.user.tag}`);
-            return; // Done
+            await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+            console.log('✓ Slash commands registered');
         } catch (err) {
-            console.error(`[Login] ✗ Attempt ${attempt} failed: ${err.message}`);
-
-            // Destroy the client's WebSocket connection before retrying
-            try { client.destroy(); } catch (_) { }
-
-            if (err.message === 'LOGIN_TIMEOUT') {
-                console.error('[Login] Connection timed out. Retrying...');
-            } else if (err.code === 'DisallowedIntents' || err.code === 4014) {
-                console.error('[Login] CAUSE: Enable SERVER MEMBERS INTENT in Discord Developer Portal.');
-                return;
-            } else if (err.code === 'TokenInvalid') {
-                console.error('[Login] CAUSE: Token is invalid. Reset it in Developer Portal.');
-                return;
-            }
-
-            if (attempt < maxRetries) {
-                const waitTime = attempt * 10000; // 10s, 20s, 30s, 40s
-                console.log(`[Login] Waiting ${waitTime / 1000}s before retry...`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-
-                // Re-login requires a fresh client token setup
-                // client.destroy() was already called above
-            }
+            console.error('✗ Failed to register commands:', err.message);
         }
     }
-    console.error(`[Login] Failed after ${maxRetries} attempts. The bot will NOT be online.`);
-    console.error('[Login] Check: 1) Token is correct 2) Intents are enabled 3) Node.js version is 18-22');
-}
+});
 
-// Start login after a brief delay
-console.log('[Login] Starting login in 3 seconds...');
-setTimeout(() => {
-    loginWithRetry(5);
-}, 3000);
+// ==================== AUTO ROLES ====================
+client.on(Events.GuildMemberAdd, async (member) => {
+    const roleId = member.user.bot ? BOT_ROLE_ID : USER_ROLE_ID;
+    if (!roleId) return;
+
+    try {
+        const role = member.guild.roles.cache.get(roleId);
+        if (role) {
+            await member.roles.add(role);
+            console.log(`✓ Auto-role: ${role.name} → ${member.user.tag}`);
+        }
+    } catch (err) {
+        console.error(`✗ Auto-role failed for ${member.user.tag}:`, err.message);
+    }
+});
+
+// ==================== INTERACTIONS ====================
+client.on(Events.InteractionCreate, async (interaction) => {
+    // Slash Command: /setup-ticket
+    if (interaction.isChatInputCommand() && interaction.commandName === 'setup-ticket') {
+        const embed = new EmbedBuilder()
+            .setColor('#0099ff')
+            .setTitle('🎫 Support Tickets')
+            .setDescription('Need help? Click the button below to open a private ticket with our support team.')
+            .setFooter({ text: 'Support System' });
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('create_ticket')
+                .setLabel('Create Ticket')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('🎫')
+        );
+
+        await interaction.channel.send({ embeds: [embed], components: [row] });
+        await interaction.reply({ content: '✓ Ticket panel created!', ephemeral: true });
+        return;
+    }
+
+    // Button: Create Ticket
+    if (interaction.isButton() && interaction.customId === 'create_ticket') {
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+            const { guild, user } = interaction;
+
+            const perms = [
+                { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+                { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+            ];
+            if (SUPPORT_ROLE_ID) {
+                perms.push({ id: SUPPORT_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
+            }
+
+            const channel = await guild.channels.create({
+                name: `ticket-${user.username}`,
+                type: ChannelType.GuildText,
+                parent: TICKET_CATEGORY_ID || undefined,
+                permissionOverwrites: perms,
+            });
+
+            const ticketEmbed = new EmbedBuilder()
+                .setTitle('Support Ticket')
+                .setDescription(`Hello ${user}, welcome to your ticket!\nA support member will assist you shortly.\n\nClick the button below to close this ticket.`)
+                .setColor('#00ff00')
+                .setTimestamp();
+
+            const closeRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('close_ticket')
+                    .setLabel('Close Ticket')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('🔒')
+            );
+
+            const ping = SUPPORT_ROLE_ID ? `<@&${SUPPORT_ROLE_ID}> ${user}` : `${user}`;
+            await channel.send({ content: ping, embeds: [ticketEmbed], components: [closeRow] });
+            await interaction.editReply({ content: `Your ticket has been created: ${channel}` });
+        } catch (err) {
+            console.error('✗ Ticket creation failed:', err.message);
+            await interaction.editReply({ content: 'Failed to create ticket. Please try again.' });
+        }
+        return;
+    }
+
+    // Button: Close Ticket
+    if (interaction.isButton() && interaction.customId === 'close_ticket') {
+        await interaction.reply({ content: '🔒 Closing ticket in 5 seconds...' });
+        setTimeout(async () => {
+            try {
+                await interaction.channel.delete();
+            } catch (err) {
+                console.error('✗ Ticket close failed:', err.message);
+            }
+        }, 5000);
+        return;
+    }
+});
+
+// ==================== ERROR HANDLING ====================
+client.on('error', (err) => console.error('Client error:', err));
+process.on('unhandledRejection', (err) => console.error('Unhandled:', err));
+
+// ==================== LOGIN ====================
+console.log('Connecting to Discord...');
+client.login(TOKEN);
