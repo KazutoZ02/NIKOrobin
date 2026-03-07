@@ -75,39 +75,54 @@ if (fs.existsSync(eventsPath)) {
 client.on('error', error => console.error('[Client Error]', error));
 client.on('warn', warning => console.warn('[Client Warn]', warning));
 
-// 7. Login with retry logic for rate limits
-async function loginWithRetry(maxRetries = 3) {
+// 7. Login with timeout and retry
+async function loginWithRetry(maxRetries = 5) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         console.log(`[Login] Attempt ${attempt}/${maxRetries}...`);
+
         try {
-            await client.login(config.discordToken);
+            // Race between login and a 30-second timeout
+            await Promise.race([
+                client.login(config.discordToken),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('LOGIN_TIMEOUT')), 30000)
+                )
+            ]);
+
             console.log(`[Login] ✓ SUCCESS! Bot is online as ${client.user.tag}`);
-            return; // Success - exit the loop
+            return; // Done
         } catch (err) {
             console.error(`[Login] ✗ Attempt ${attempt} failed: ${err.message}`);
 
-            if (err.code === 'DisallowedIntents' || err.code === 4014) {
+            // Destroy the client's WebSocket connection before retrying
+            try { client.destroy(); } catch (_) { }
+
+            if (err.message === 'LOGIN_TIMEOUT') {
+                console.error('[Login] Connection timed out. Retrying...');
+            } else if (err.code === 'DisallowedIntents' || err.code === 4014) {
                 console.error('[Login] CAUSE: Enable SERVER MEMBERS INTENT in Discord Developer Portal.');
-                return; // Don't retry for intent issues
-            }
-            if (err.code === 'TokenInvalid') {
+                return;
+            } else if (err.code === 'TokenInvalid') {
                 console.error('[Login] CAUSE: Token is invalid. Reset it in Developer Portal.');
-                return; // Don't retry for bad tokens
+                return;
             }
 
-            // For rate limits or network issues, wait and retry
             if (attempt < maxRetries) {
-                const waitTime = attempt * 15000; // 15s, 30s, 45s
-                console.log(`[Login] Waiting ${waitTime / 1000}s before retry (rate limit cooldown)...`);
+                const waitTime = attempt * 10000; // 10s, 20s, 30s, 40s
+                console.log(`[Login] Waiting ${waitTime / 1000}s before retry...`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
+
+                // Re-login requires a fresh client token setup
+                // client.destroy() was already called above
             }
         }
     }
-    console.error(`[Login] Failed after ${maxRetries} attempts.`);
+    console.error(`[Login] Failed after ${maxRetries} attempts. The bot will NOT be online.`);
+    console.error('[Login] Check: 1) Token is correct 2) Intents are enabled 3) Node.js version is 18-22');
 }
 
-// Wait 5 seconds before first login attempt to let rate limits cool down
-console.log('[Login] Waiting 5 seconds before connecting (rate limit cooldown)...');
+// Start login after a brief delay
+console.log('[Login] Starting login in 3 seconds...');
 setTimeout(() => {
-    loginWithRetry(3);
-}, 5000);
+    loginWithRetry(5);
+}, 3000);
