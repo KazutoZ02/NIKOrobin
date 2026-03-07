@@ -73,11 +73,22 @@ if (!config.discordToken) {
 
 // Login
 console.log("[Startup] Attempting to log in to Discord...");
+
+// Timeout to detect a hung login
+const loginTimeout = setTimeout(() => {
+    console.error("[Startup] LOGIN TIMED OUT after 30 seconds. Possible causes:");
+    console.error("  1. Invalid DISCORD_TOKEN");
+    console.error("  2. Privileged Gateway Intents (Server Members) not enabled in Discord Developer Portal");
+    console.error("  3. Network issue on the hosting platform");
+}, 30000);
+
 client.login(config.discordToken)
     .then(() => {
+        clearTimeout(loginTimeout);
         console.log("[Startup] Login call successful (Promise resolved)");
     })
     .catch(err => {
+        clearTimeout(loginTimeout);
         console.error("[Startup Login Error]", err);
     });
 
@@ -86,7 +97,10 @@ client.on('error', error => {
     console.error('[Discord Client Error]', error);
 });
 
+client.on('warn', warning => {
+    console.warn('[Discord Client Warning]', warning);
+});
+
 client.on('debug', info => {
-    // Uncomment for very verbose discord.js internal logs
-    // console.log('[Discord Debug]', info);
+    console.log('[Discord Debug]', info);
 });
