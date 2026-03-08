@@ -1,48 +1,72 @@
-🌸 Niko Robin — Private Discord Bot
+<div align="center">🌸 Niko Robin Discord Bot
 
-«A private single-guild Discord bot built with Node.js + discord.js v14.
-Includes a ticket system, welcome/leave system, auto-roles, slash commands, and a web dashboard — fully compatible with Render free tier hosting.»
+<img src="https://i.imgur.com/7x5KXkP.png" width="120">A private single-guild Discord bot built with Node.js & discord.js v14
+Ticket system • Welcome system • Auto-roles • Dashboard • Render ready
 
----
+<br>"Node.js" (https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white)
+"Discord.js" (https://img.shields.io/badge/discord.js-v14-5865F2?style=for-the-badge&logo=discord)
+"Render" (https://img.shields.io/badge/Render-Hosting-46E3B7?style=for-the-badge&logo=render&logoColor=black)
+"License" (https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
+
+</div>---
 
 ✨ Features
 
-- 🎟 Ticket System
-  
-  - "/ticket" command to create tickets
-  - Claim & close buttons
-  - Role-based permissions
-  - Private ticket channels
+🎟 Ticket System
 
-- 👋 Welcome System
-  
-  - Sends welcome embed with image
-  - Auto-assigns user role on join
+• "/ticket" slash command
+• Private ticket channels
+• Claim & Close buttons
+• Staff role permissions
+• Ticket category auto creation
 
-- 🚪 Leave System
-  
-  - Sends leave embed with custom image
+---
 
-- ⚡ Ping Command
-  
-  - "/ping" shows bot latency
-  - Includes banner image
+👋 Welcome System
 
-- 🎛 Web Dashboard
-  
-  - Configure ticket permissions
-  - Choose which roles can:
-    - raise tickets
-    - claim tickets
-  - Simple password protection
+• Sends welcome embed with image
+• Auto assigns user role
 
-- 🛡 Private Bot
-  
-  - Works only in one guild
+---
 
-- ☁ Render Compatible
-  
-  - Ready for Render free tier web service
+🚪 Leave System
+
+• Sends goodbye embed when user leaves
+
+---
+
+⚡ Ping Command
+
+"/ping"
+
+Shows:
+
+• API latency
+• Bot latency
+• Banner image
+
+---
+
+🎛 Web Dashboard
+
+Simple web panel for configuring ticket roles.
+
+You can choose:
+
+• Which roles can create tickets
+• Which roles can claim tickets
+
+---
+
+🛡 Private Bot
+
+This bot only works inside one guild.
+
+This makes it perfect for:
+
+• Private communities
+• Project servers
+• Moderation utilities
 
 ---
 
@@ -73,7 +97,7 @@ niko-robin/
 
 ⚙ Environment Variables
 
-Create a ".env" file or set these on Render:
+Create a ".env" file:
 
 DISCORD_TOKEN=your_bot_token
 CLIENT_ID=your_application_id
@@ -85,7 +109,7 @@ PORT=10000
 
 📦 Installation
 
-Clone the repository
+Clone repository
 
 git clone https://github.com/yourusername/niko-robin.git
 cd niko-robin
@@ -94,7 +118,7 @@ Install dependencies
 
 npm install
 
-Start the bot
+Run bot
 
 npm start
 
@@ -102,72 +126,74 @@ npm start
 
 ☁ Deploy on Render
 
-1️⃣ Push the project to GitHub
+1️⃣ Push project to GitHub
 
-2️⃣ Create a new Render Web Service
+2️⃣ Open
+https://render.com
 
-3️⃣ Use these settings
+3️⃣ Create New Web Service
+
+4️⃣ Configure
 
 Setting| Value
 Runtime| Node
-Build Command| "npm install"
-Start Command| "npm start"
+Build Command| npm install
+Start Command| npm start
 
-4️⃣ Add environment variables in Render dashboard
+5️⃣ Add environment variables
 
-5️⃣ Deploy 🎉
+Deploy 🎉
 
 ---
 
-🎟 Ticket System
+🎟 Ticket Command
 
-Users can open tickets using:
+Create ticket:
 
 /ticket
 
-Ticket channels include:
+The bot will create:
 
-- Claim Button → Staff claims ticket
-- Close Button → Deletes ticket after 5 seconds
+ticket-XXXX
 
-Permissions are managed in the web dashboard.
+Inside the channel you will see:
+
+Claim → staff takes ticket
+Close → deletes ticket
 
 ---
 
 🎛 Dashboard
 
-Access the dashboard from:
+Open dashboard:
 
 https://your-render-app.onrender.com
 
-Login with the password set in:
+Enter password:
 
 DASHBOARD_PASSWORD
 
-Dashboard lets you configure:
-
-- Roles that can create tickets
-- Roles that can claim tickets
+From here you can manage ticket roles.
 
 ---
 
 🖼 Required Assets
 
-Place these images inside the "assets/" folder:
+Add these images inside the assets folder
 
 File| Used For
-"banner.jpg"| Ping & ticket embeds
-"welcome.jpg"| Welcome message
-"leave.jpg"| Leave message
+banner.jpg| ping & ticket embeds
+welcome.jpg| welcome embed
+leave.jpg| leave embed
 
 ---
 
 🛠 Tech Stack
 
-- Node.js
-- discord.js v14
-- Express
-- Render Hosting
+• Node.js
+• discord.js v14
+• Express
+• Render hosting
 
 ---
 
@@ -177,9 +203,11 @@ MIT License
 
 ---
 
-👤 Author
+<div align="center">👤 Author
 
-Created by Kazuto
+Kazuto
 
-«Inspired by the legendary archaeologist
-Nico Robin from One Piece 🏴‍☠️»
+Inspired by
+🏴‍☠️ Nico Robin from One Piece
+
+</div>
