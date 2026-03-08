@@ -1,24 +1,60 @@
-const fs = require('fs');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  AttachmentBuilder,
+} = require('discord.js');
 const path = require('path');
-const { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('ping').setDescription('Bot ping and status'),
-  async execute(interaction, client, cfg) {
+  data: new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('🏓 Check the bot latency'),
+
+  async execute(interaction, client) {
     await interaction.deferReply();
-    cfg = cfg || JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json')));
-    const imagePath = path.join(__dirname, '..', cfg.bannerImage || 'assets/banner.jpg');
-    const attachment = fs.existsSync(imagePath) ? new AttachmentBuilder(fs.readFileSync(imagePath), { name: 'banner.jpg' }) : null;
+
+    const sent = await interaction.fetchReply();
+    const botLatency = sent.createdTimestamp - interaction.createdTimestamp;
+    const apiLatency = Math.round(client.ws.ping);
+
+    const color =
+      apiLatency < 100 ? 0x4caf50 : apiLatency < 200 ? 0xff9800 : 0xf44336;
+
+    const banner = new AttachmentBuilder(
+      path.join(__dirname, '..', 'assets', 'banner.jpg'),
+      { name: 'banner.jpg' }
+    );
+
     const embed = new EmbedBuilder()
-      .setTitle('Pong!')
+      .setColor(color)
+      .setTitle('🏓 Pong!')
+      .setDescription('Here is the current latency status for **Niko Robin**:')
       .addFields(
-        { name: 'API Latency', value: `${Math.round(client.ws.ping)} ms`, inline: true },
-        { name: 'Bot Latency', value: `${Date.now() - interaction.createdTimestamp} ms`, inline: true }
+        {
+          name: '⚡ Bot Latency',
+          value: `\`${botLatency}ms\``,
+          inline: true,
+        },
+        {
+          name: '📡 API Latency',
+          value: `\`${apiLatency}ms\``,
+          inline: true,
+        },
+        {
+          name: '🟢 Status',
+          value:
+            apiLatency < 100
+              ? '`Excellent`'
+              : apiLatency < 200
+              ? '`Good`'
+              : '`High`',
+          inline: true,
+        }
       )
-      .setColor(0x00AAFF)
+      .setImage('attachment://banner.jpg')
+      .setFooter({ text: 'Niko Robin • Utility', iconURL: client.user.displayAvatarURL() })
       .setTimestamp();
-    const payload = { embeds: [embed] };
-    if (attachment) payload.files = [attachment];
-    await interaction.editReply(payload);
-  }
+
+    await interaction.editReply({ embeds: [embed], files: [banner] });
+  },
 };
