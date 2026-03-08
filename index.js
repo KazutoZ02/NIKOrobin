@@ -1,10 +1,10 @@
-// index.js
+// index.js — bot main + express dashboard (loads commands from commands/)
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const bodyParser = require('body-parser');
-const { Client, GatewayIntentBits, Partials, REST, Routes, EmbedBuilder, AttachmentBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, REST, Routes, Collection, PermissionsBitField } = require('discord.js');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -18,54 +18,42 @@ if (!TOKEN || !CLIENT_ID || !GUILD_ID) {
 }
 
 const CONFIG_PATH = path.join(__dirname, 'config.json');
-function readConfig() {
-  return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-}
-function writeConfig(cfg) {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf-8');
-}
+function readConfig() { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); }
+function writeConfig(cfg) { fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf-8'); }
 let cfg = readConfig();
 
 // Create client
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   partials: [Partials.Channel]
 });
+client.commands = new Collection();
 
-// Basic command registration: /ping and /ticket will be registered to guild
-async function registerCommands() {
-  const commands = [
-    {
-      name: 'ping',
-      description: 'Bot ping and status'
-    },
-    {
-      name: 'ticket',
-      description: 'Open a support ticket',
-      options: [
-        { name: 'subject', description: 'Short subject for the ticket', type: 3, required: false }
-      ]
+// Load command files from commands/
+const commandsPath = path.join(__dirname, 'commands');
+if (fs.existsSync(commandsPath)) {
+  const files = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
+  for (const file of files) {
+    const cmd = require(path.join(commandsPath, file));
+    if (cmd.data && cmd.execute) {
+      client.commands.set(cmd.data.name, cmd);
     }
-  ];
-  const rest = new REST({ version: '10' }).setToken(TOKEN);
-  try {
-    console.log('Registering guild commands...');
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-    console.log('Commands registered.');
-  } catch (err) {
-    console.error('Error registering commands', err);
   }
 }
 
-// Helper: only operate in the configured guild
-function isAllowedGuild(guildId) {
-  return String(guildId) === String(GUILD_ID);
+// Register commands to guild
+async function registerCommands() {
+  const rest = new REST({ version: '10' }).setToken(TOKEN);
+  const commandData = [];
+  for (const cmd of client.commands.values()) commandData.push(cmd.data.toJSON());
+  try {
+    console.log('Registering guild commands...');
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commandData });
+    console.log('Commands registered.');
+  } catch (err) { console.error('Error registering commands', err); }
 }
+
+function isAllowedGuild(guildId) { return String(guildId) === String(GUILD_ID); }
 
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -77,150 +65,48 @@ client.on('guildMemberAdd', async (member) => {
   if (!isAllowedGuild(member.guild.id)) return;
   try {
     cfg = readConfig();
-    // Auto role assignment
     if (cfg.usersRoleId) {
       const r = member.guild.roles.cache.get(cfg.usersRoleId) || await member.guild.roles.fetch(cfg.usersRoleId).catch(()=>null);
       if (r) await member.roles.add(r).catch(()=>{});
     }
-    // Welcome embed
     const channel = member.guild.channels.cache.get(cfg.welcomeChannel) || await member.guild.channels.fetch(cfg.welcomeChannel).catch(()=>null);
-    if (channel) {
-      const imagePath = path.join(__dirname, cfg.welcomeImage || 'assets/welcome.jpg');
-      const attachment = new AttachmentBuilder(fs.readFileSync(imagePath), { name: 'welcome.jpg' });
-      const embed = new EmbedBuilder()
-        .setTitle(`Welcome ${member.user.username}!`)
-        .setDescription(`Welcome to the server, <@${member.id}>!`)
-        .setImage('attachment://welcome.jpg')
-        .setColor(0x00FF99)
-        .setTimestamp();
-      await channel.send({ embeds: [embed], files: [attachment] }).catch(console.error);
+    if (channel && fs.existsSync(path.join(__dirname, cfg.welcomeImage))) {
+      const att = { files: [path.join(__dirname, cfg.welcomeImage)] };
+      const embedMsg = { content: `<@${member.id}>`, files: [path.join(__dirname, cfg.welcomeImage)] };
+      await channel.send({ content: `<@${member.id}> Welcome!`, files: [path.join(__dirname, cfg.welcomeImage)] }).catch(console.error);
     }
   } catch (e) { console.error(e); }
 });
 
-// Leave embed
 client.on('guildMemberRemove', async (member) => {
   if (!isAllowedGuild(member.guild.id)) return;
   try {
     cfg = readConfig();
     const channel = member.guild.channels.cache.get(cfg.leaveChannel) || await member.guild.channels.fetch(cfg.leaveChannel).catch(()=>null);
-    if (channel) {
-      const imagePath = path.join(__dirname, cfg.leaveImage || 'assets/leave.jpg');
-      const attachment = new AttachmentBuilder(fs.readFileSync(imagePath), { name: 'leave.jpg' });
-      const embed = new EmbedBuilder()
-        .setTitle(`Goodbye ${member.user.username}`)
-        .setDescription(`${member.user.tag} has left the server.`)
-        .setImage('attachment://leave.jpg')
-        .setColor(0xFF5555)
-        .setTimestamp();
-      await channel.send({ embeds: [embed], files: [attachment] }).catch(console.error);
+    if (channel && fs.existsSync(path.join(__dirname, cfg.leaveImage))) {
+      await channel.send({ content: `${member.user.tag} has left.`, files: [path.join(__dirname, cfg.leaveImage)] }).catch(console.error);
     }
   } catch (e) { console.error(e); }
 });
 
-// Slash command handling (ping, ticket)
+// Interaction handling: commands come from modular files
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.inGuild() || !isAllowedGuild(interaction.guildId)) return;
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
   if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === 'ping') {
-      await interaction.deferReply();
-      cfg = readConfig();
-      const imagePath = path.join(__dirname, cfg.bannerImage || 'assets/banner.jpg');
-      const attachment = new AttachmentBuilder(fs.readFileSync(imagePath), { name: 'banner.jpg' });
-      const embed = new EmbedBuilder()
-        .setTitle('Pong!')
-        .addFields(
-          { name: 'API Latency', value: `${Math.round(client.ws.ping)} ms`, inline: true },
-          { name: 'Bot Latency', value: `${Date.now() - interaction.createdTimestamp} ms`, inline: true }
-        )
-        .setImage('attachment://banner.jpg')
-        .setColor(0x00AAFF)
-        .setTimestamp();
-      await interaction.editReply({ embeds: [embed], files: [attachment] });
-    }
-
-    if (interaction.commandName === 'ticket') {
-      await interaction.deferReply({ ephemeral: true });
-      cfg = readConfig();
-      // Check if user is allowed to raise a ticket (if cfg.ticket.roleCanRaise non-empty then require one)
-      if (cfg.ticket.roleCanRaise && cfg.ticket.roleCanRaise.length > 0) {
-        const member = await interaction.guild.members.fetch(interaction.user.id).catch(()=>null);
-        const hasRole = member.roles.cache.some(r => cfg.ticket.roleCanRaise.includes(r.id));
-        if (!hasRole) {
-          return interaction.editReply({ content: 'You are not permitted to create a ticket.' });
-        }
-      }
-      const subject = interaction.options.getString('subject') || 'No subject';
-      // Create ticket channel
-      const category = interaction.guild.channels.cache.find(c => c.type === 4 && c.name === cfg.ticket.categoryName) || (await interaction.guild.channels.create({ name: cfg.ticket.categoryName, type: 4 }).catch(()=>null));
-      const ticketId = Math.floor(Math.random()*9000)+1000;
-      const channelName = `ticket-${ticketId}`;
-      const everyone = interaction.guild.roles.everyone;
-      let permissionOverwrites = [
-        { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] }
-      ];
-      // allow ticket creator
-      permissionOverwrites.push({ id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.AttachFiles] });
-      // allow bot itself
-      permissionOverwrites.push({ id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] });
-      // allow roles that can claim
-      if (cfg.ticket.roleCanClaim && cfg.ticket.roleCanClaim.length > 0) {
-        for (const roleId of cfg.ticket.roleCanClaim) permissionOverwrites.push({ id: roleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
-      }
-      const ticketChannel = await interaction.guild.channels.create({ name: channelName, type: 0, parent: category?.id, permissionOverwrites }).catch(err => { console.error(err); return null; });
-      if (!ticketChannel) return interaction.editReply({ content: 'Failed to create ticket channel.' });
-
-      const bannerPath = path.join(__dirname, cfg.bannerImage || 'assets/banner.jpg');
-      const attachment = new AttachmentBuilder(fs.readFileSync(bannerPath), { name: 'banner.jpg' });
-
-      const row = new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder().setCustomId(`claim_${ticketChannel.id}`).setLabel('Claim').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId(`close_${ticketChannel.id}`).setLabel('Close').setStyle(ButtonStyle.Danger)
-        );
-
-      const embed = new EmbedBuilder()
-        .setTitle(`Ticket ${ticketId}`)
-        .setDescription(`**Subject:** ${subject}\n**Opened by:** <@${interaction.user.id}>`)
-        .setImage('attachment://banner.jpg')
-        .setColor(0xFFD166)
-        .setTimestamp();
-
-      await ticketChannel.send({ content: `<@${interaction.user.id}>`, embeds: [embed], files: [attachment], components: [row] });
-      await interaction.editReply({ content: `Ticket created: ${ticketChannel}` });
-    }
+    const command = client.commands.get(interaction.commandName);
+    if (!command) return interaction.reply({ content: 'Command not found.', ephemeral: true });
+    try { await command.execute(interaction, client, cfg, readConfig); } catch (err) { console.error(err); interaction.reply({ content: 'There was an error executing that command.', ephemeral: true }); }
   }
 
-  // Button interactions for claim & close
+  // Buttons are handled inside command files by listening on client — we implement claim/close inside ticket command using interactionCreate as well,
+  // but for simplicity we'll delegate to the ticket command's button handler if exported.
   if (interaction.isButton()) {
-    const customId = interaction.customId;
-    if (customId.startsWith('claim_')) {
-      const channelId = customId.split('_')[1];
-      if (interaction.channel.id !== channelId) return interaction.reply({ content: 'This button is not for this channel.', ephemeral: true });
-      cfg = readConfig();
-      // check claimant permissions — must be in roleCanClaim or be admin
-      const member = await interaction.guild.members.fetch(interaction.user.id).catch(()=>null);
-      const isAllowed = member.permissions.has(PermissionsBitField.Flags.Administrator) || (cfg.ticket.roleCanClaim || []).some(r => member.roles.cache.has(r));
-      if (!isAllowed) return interaction.reply({ content: 'You are not allowed to claim tickets.', ephemeral: true });
-      // update channel perms: restrict send/view to claimer + original + roles allowed
-      await interaction.channel.permissionOverwrites.edit(interaction.user.id, { ViewChannel: true, SendMessages: true }).catch(()=>{});
-      await interaction.reply({ content: `Ticket claimed by <@${interaction.user.id}>`, ephemeral: false });
-      await interaction.channel.send({ content: `🔒 Ticket claimed by <@${interaction.user.id}>` });
-    }
-    if (customId.startsWith('close_')) {
-      const channelId = customId.split('_')[1];
-      if (interaction.channel.id !== channelId) return interaction.reply({ content: 'This button is not for this channel.', ephemeral: true });
-      // move channel to archived (or delete after 10s)
-      await interaction.reply({ content: 'Closing ticket in 5 seconds...' });
-      setTimeout(async () => {
-        try {
-          await interaction.channel.delete(`Ticket closed by ${interaction.user.tag}`);
-        } catch (e) {
-          console.error('Failed to delete ticket channel', e);
-        }
-      }, 5000);
+    // If ticket command exports handleButton, call it
+    const ticketCmd = client.commands.get('ticket');
+    if (ticketCmd && typeof ticketCmd.handleButton === 'function') {
+      try { await ticketCmd.handleButton(interaction, client, cfg, readConfig); } catch (e) { console.error('button handler error', e); }
     }
   }
 });
@@ -230,29 +116,17 @@ const app = express();
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// simple auth middleware
 function checkAuth(req, res, next) {
   const pw = req.headers['x-dashboard-password'] || req.body.password || req.query.password;
   if (pw === DASHBOARD_PASSWORD) return next();
   return res.status(401).json({ error: 'unauthorized' });
 }
 
-// GET config
-app.get('/api/config', checkAuth, (req, res) => {
-  try { cfg = readConfig(); res.json(cfg); } catch(e) { res.status(500).json({ error: 'read failed' }); }
-});
+app.get('/api/config', checkAuth, (req, res) => { try { cfg = readConfig(); res.json(cfg); } catch(e) { res.status(500).json({ error: 'read failed' }); } });
 
-// POST update config
 app.post('/api/config', checkAuth, async (req, res) => {
-  try {
-    const newCfg = Object.assign(cfg, req.body);
-    writeConfig(newCfg);
-    cfg = readConfig();
-    return res.json({ ok: true, cfg });
-  } catch (e) { console.error(e); res.status(500).json({ error: 'save failed' }); }
-});
+  try { const newCfg = Object.assign(cfg, req.body); writeConfig(newCfg); cfg = readConfig(); return res.json({ ok: true, cfg }); } catch (e) { console.error(e); res.status(500).json({ error: 'save failed' }); } });
 
-// GET roles list (protected)
 app.get('/api/roles', checkAuth, async (req, res) => {
   try {
     const guild = await client.guilds.fetch(GUILD_ID);
@@ -262,8 +136,6 @@ app.get('/api/roles', checkAuth, async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: 'failed to fetch roles' }); }
 });
 
-app.listen(PORT, () => {
-  console.log(`Express dashboard listening on port ${PORT}`);
-});
+app.listen(PORT, () => { console.log(`Express dashboard listening on port ${PORT}`); });
 
 client.login(TOKEN);
