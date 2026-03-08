@@ -2,8 +2,17 @@ services:
   - type: web
     name: niko-robin
     env: node
+    region: singapore
+    plan: free
     buildCommand: npm install
     startCommand: npm start
+    healthCheckPath: /health
     envVars:
-      - key: DISCORD_BOT_TOKEN
+      - key: TOKEN
         sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: GUILD_ID
+        sync: false
+      - key: NODE_ENV
+        value: production
