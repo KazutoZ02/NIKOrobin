@@ -1,4 +1,3 @@
-// dashboard.js
 let password = '';
 const pwEl = document.getElementById('pw');
 const loginBtn = document.getElementById('login');
@@ -6,12 +5,8 @@ const content = document.getElementById('content');
 const cfgPre = document.getElementById('cfg');
 const rolesDiv = document.getElementById('roles');
 let cfg = null;
-let roles = [];
 
-loginBtn.onclick = async () => {
-  password = pwEl.value;
-  await loadConfig();
-};
+loginBtn.onclick = async () => { password = pwEl.value; await loadConfig(); };
 
 async function loadConfig() {
   const headers = { 'x-dashboard-password': password };
@@ -22,31 +17,28 @@ async function loadConfig() {
     cfgPre.textContent = JSON.stringify(cfg, null, 2);
     content.style.display = 'block';
     await loadRoles();
-  } catch (e) {
-    alert('Failed to load — check password');
-  }
+  } catch (e) { alert('Failed to load — check password'); }
 }
 
 async function loadRoles() {
-  const r = await fetch('/api/roles', { headers: { 'x-dashboard-password': password }});
+  const r = await fetch('/api/roles', { headers: { 'x-dashboard-password': password } });
   if (!r.ok) { rolesDiv.textContent = 'failed to fetch roles'; return; }
-  roles = await r.json();
+  const roles = await r.json();
   rolesDiv.innerHTML = '';
   const raise = new Set(cfg.ticket.roleCanRaise || []);
   const claim = new Set(cfg.ticket.roleCanClaim || []);
   roles.forEach(role => {
     const el = document.createElement('div');
-    el.innerHTML = `
+    el.innerHTML = `\
       <label><input type="checkbox" data-role="${role.id}" data-type="raise" ${raise.has(role.id)?'checked':''} /> Can Raise</label>
-      <label><input type="checkbox" data-role="${role.id}" data-type="claim" ${claim.has(role.id)?'checked':''} /> Can Claim</label>
-      <span>${role.name}</span>
+      <label style="margin-left:12px;"><input type="checkbox" data-role="${role.id}" data-type="claim" ${claim.has(role.id)?'checked':''} /> Can Claim</label>
+      <span style="margin-left:12px">${role.name}</span>
     `;
     rolesDiv.appendChild(el);
   });
 }
 
 document.getElementById('save').onclick = async () => {
-  // read checkboxes
   const raise = [];
   const claim = [];
   document.querySelectorAll('input[data-role]').forEach(cb => {
@@ -59,9 +51,5 @@ document.getElementById('save').onclick = async () => {
   });
   const newCfg = Object.assign({}, cfg, { ticket: Object.assign({}, cfg.ticket, { roleCanRaise: raise, roleCanClaim: claim }) });
   const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': password }, body: JSON.stringify(newCfg) });
-  if (r.ok) {
-    alert('Saved');
-    cfg = await r.json().then(x=>x.cfg);
-    cfgPre.textContent = JSON.stringify(cfg, null, 2);
-  } else alert('Save failed');
+  if (r.ok) { alert('Saved'); cfg = await r.json().then(x=>x.cfg); cfgPre.textContent = JSON.stringify(cfg, null, 2); } else alert('Save failed');
 };
