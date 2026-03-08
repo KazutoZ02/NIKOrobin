@@ -1,1 +1,9 @@
-
+services:
+  - type: web
+    name: niko-robin
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DISCORD_BOT_TOKEN
+        sync: false
