@@ -20,18 +20,16 @@ const express = require('express');
 const fs      = require('fs');
 const path    = require('path');
 
-// ─── Validate env vars immediately ───────────────────────────────────────────
-const REQUIRED_ENV = ['TOKEN', 'CLIENT_ID', 'GUILD_ID'];
-const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
-if (missing.length) {
-  console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
-  console.error('   Set them in Render → Environment tab, then redeploy.');
-  process.exit(1);
-}
+// --- Env vars (Express starts regardless so Render health check always passes) ---
+const TOKEN     = process.env.TOKEN     || null;
+const CLIENT_ID = process.env.CLIENT_ID || null;
+const GUILD_ID  = process.env.GUILD_ID  || null;
 
-const TOKEN     = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID  = process.env.GUILD_ID;
+const _missing = [!TOKEN && 'TOKEN', !CLIENT_ID && 'CLIENT_ID', !GUILD_ID && 'GUILD_ID'].filter(Boolean);
+if (_missing.length) {
+  console.error('WARNING: Missing env vars: ' + _missing.join(', '));
+  console.error('  Go to: Render Dashboard > your service > Environment > add TOKEN, CLIENT_ID, GUILD_ID > Save Changes > Manual Deploy');
+}
 
 // ─── Load config ──────────────────────────────────────────────────────────────
 let config;
@@ -413,17 +411,36 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 // ─── Discord Login ────────────────────────────────────────────────────────────
-console.log('⏳ Connecting to Discord…');
-client.login(TOKEN).catch((err) => {
-  console.error('❌ Discord login FAILED:', err.message);
-  console.error('   → Check TOKEN in Render environment variables.');
-  process.exit(1);
+// --- Discord Login with auto-reconnect ---
+function connectBot() {
+  if (!TOKEN) {
+    console.error('TOKEN missing - set it in Render Environment variables.');
+    return;
+  }
+  console.log('Connecting to Discord...');
+  client.login(TOKEN).catch((err) => {
+    console.error('Discord login failed:', err.message);
+    console.log('Retrying in 10 seconds...');
+    setTimeout(connectBot, 10000);
+  });
+}
+
+client.on('disconnect', () => {
+  console.warn('Bot disconnected from Discord. Reconnecting...');
+  setTimeout(connectBot, 5000);
 });
 
-// ─── Process-level crash prevention ──────────────────────────────────────────
+client.on('invalidated', () => {
+  console.error('Session invalidated. Reconnecting...');
+  setTimeout(connectBot, 10000);
+});
+
+connectBot();
+
+// --- Process-level crash prevention ---
 process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled Promise Rejection:', reason);
+  console.error('Unhandled Rejection:', reason);
 });
 process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception (non-fatal):', err.message);
+  console.error('Uncaught Exception:', err.message);
 });
