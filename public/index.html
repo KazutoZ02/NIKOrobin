@@ -1,1 +1,22 @@
-
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Niko Robin — Dashboard</title>
+</head>
+<body>
+  <h1>Niko Robin — Dashboard</h1>
+  <p>Enter dashboard password to view and edit config.</p>
+  <input id="pw" placeholder="dashboard password" type="password" />
+  <button id="login">Login</button>
+  <div id="content" style="display:none">
+    <h2>Config</h2>
+    <pre id="cfg"></pre>
+    <h3>Roles</h3>
+    <div id="roles"></div>
+    <button id="save">Save config</button>
+  </div>
+  <script src="/dashboard.js"></script>
+</body>
+</html>
