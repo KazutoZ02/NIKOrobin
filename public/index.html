@@ -4,13 +4,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Niko Robin — Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input { padding: 8px; }
+    button { padding: 8px 12px; margin-left:8px }
+    pre { background:#f6f6f6; padding:12px }
+  </style>
 </head>
 <body>
   <h1>Niko Robin — Dashboard</h1>
   <p>Enter dashboard password to view and edit config.</p>
   <input id="pw" placeholder="dashboard password" type="password" />
   <button id="login">Login</button>
-  <div id="content" style="display:none">
+  <div id="content" style="display:none; margin-top:20px;">
     <h2>Config</h2>
     <pre id="cfg"></pre>
     <h3>Roles</h3>
