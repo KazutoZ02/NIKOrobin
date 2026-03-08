@@ -1,14 +1,10 @@
 {
-  "welcomeChannel": "1472931536461365289",
-  "leaveChannel": "1472933955652030642",
-  "welcomeImage": "assets/welcome.jpg",
-  "leaveImage": "assets/leave.jpg",
-  "bannerImage": "assets/banner.jpg",
-  "botRoleId": "1472935152421306603",
-  "usersRoleId": "1472934932966932490",
-  "ticket": {
-    "categoryName": "Tickets",
-    "roleCanRaise": [],
-    "roleCanClaim": []
+  "channels": {
+    "welcome": "1472931536461365289",
+    "leave": "1472933955652030642"
+  },
+  "roles": {
+    "bot": "1472935152421306603",
+    "users": "1472934932966932490"
   }
 }
