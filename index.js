@@ -441,6 +441,7 @@ client.on('interactionCreate', async (interaction) => {
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 // API: get guild roles
 app.get('/api/roles', async (req, res) => {
