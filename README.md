@@ -2,7 +2,7 @@
 
 # 🌸 Niko Robin Discord Bot
 
-<img src="https://i.imgur.com/7x5KXkP.png" width="120" alt="Niko Robin Logo">
+<img src="./assets/logo.jpg" width="120" alt="Niko Robin Logo">
 
 **A private, single-guild Discord bot built with Node.js & discord.js v14** *Ticket system • Welcome system • Auto-roles • Dashboard • Render ready*
 
