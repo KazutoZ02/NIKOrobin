@@ -1,11 +1,12 @@
 {
   "name": "niko-robin",
   "version": "1.0.0",
-  "description": "Private Discord bot for a single guild — Niko Robin",
+  "description": "Private Discord bot",
   "main": "index.js",
+  "license": "MIT",
   "scripts": {
     "start": "node index.js"
-  },
+  }
   "engines": { "node": "18.x" },
   "dependencies": {
     "discord.js": "^14.12.0",
