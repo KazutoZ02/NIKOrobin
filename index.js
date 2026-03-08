@@ -1,4 +1,5 @@
 require('dotenv').config();
+
 const {
   Client,
   GatewayIntentBits,
@@ -13,13 +14,35 @@ const {
   PermissionFlagsBits,
   REST,
   Routes,
+  ActivityType,
 } = require('discord.js');
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const config = require('./config.json');
+const fs      = require('fs');
+const path    = require('path');
 
-// ─── Client Setup ────────────────────────────────────────────────────────────
+// ─── Validate env vars immediately ───────────────────────────────────────────
+const REQUIRED_ENV = ['TOKEN', 'CLIENT_ID', 'GUILD_ID'];
+const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missing.length) {
+  console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
+  console.error('   Set them in Render → Environment tab, then redeploy.');
+  process.exit(1);
+}
+
+const TOKEN     = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID  = process.env.GUILD_ID;
+
+// ─── Load config ──────────────────────────────────────────────────────────────
+let config;
+try {
+  config = require('./config.json');
+} catch (e) {
+  console.error('❌ Could not load config.json:', e.message);
+  process.exit(1);
+}
+
+// ─── Client Setup ─────────────────────────────────────────────────────────────
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -34,406 +57,311 @@ const client = new Client({
 client.commands = new Collection();
 
 // ─── Load Commands ────────────────────────────────────────────────────────────
-const commandFiles = fs
-  .readdirSync(path.join(__dirname, 'commands'))
-  .filter((f) => f.endsWith('.js'));
-
 const commandsData = [];
-for (const file of commandFiles) {
-  const command = require(`./commands/${file}`);
-  client.commands.set(command.data.name, command);
-  commandsData.push(command.data.toJSON());
+try {
+  const commandFiles = fs
+    .readdirSync(path.join(__dirname, 'commands'))
+    .filter((f) => f.endsWith('.js'));
+
+  for (const file of commandFiles) {
+    const command = require(`./commands/${file}`);
+    client.commands.set(command.data.name, command);
+    commandsData.push(command.data.toJSON());
+    console.log(`📦 Loaded command: ${command.data.name}`);
+  }
+} catch (e) {
+  console.error('❌ Failed to load commands:', e.message);
+  process.exit(1);
 }
 
 // ─── Register Slash Commands ──────────────────────────────────────────────────
 async function registerCommands() {
-  const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+  const rest = new REST({ version: '10' }).setToken(TOKEN);
   try {
-    console.log('Registering slash commands for guild…');
+    console.log('⏳ Registering slash commands…');
     await rest.put(
-      Routes.applicationGuildCommands(
-        process.env.CLIENT_ID,
-        process.env.GUILD_ID
-      ),
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commandsData }
     );
-    console.log('✅ Slash commands registered.');
+    console.log('✅ Slash commands registered successfully.');
   } catch (err) {
-    console.error('Command registration error:', err);
+    console.error('⚠️  Slash command registration failed:', err.message);
   }
 }
 
-// ─── Ticket Storage (in-memory + JSON persistence) ───────────────────────────
+// ─── Ticket Storage ───────────────────────────────────────────────────────────
 const ticketDataPath = path.join(__dirname, 'tickets.json');
 
 function loadTickets() {
   if (!fs.existsSync(ticketDataPath)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(ticketDataPath, 'utf8'));
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(fs.readFileSync(ticketDataPath, 'utf8')); }
+  catch { return {}; }
 }
-
 function saveTickets(data) {
-  fs.writeFileSync(ticketDataPath, JSON.stringify(data, null, 2));
+  try { fs.writeFileSync(ticketDataPath, JSON.stringify(data, null, 2)); }
+  catch (e) { console.error('saveTickets error:', e.message); }
 }
 
-let ticketStore = loadTickets(); // { channelId: { userId, claimedBy, number } }
+let ticketStore   = loadTickets();
 let ticketCounter = Object.keys(ticketStore).length;
 
-// ─── Dashboard Config Storage ─────────────────────────────────────────────────
-const dashConfigPath = path.join(__dirname, 'dashConfig.json');
+// ─── Dashboard Config ─────────────────────────────────────────────────────────
+const dashConfigPath    = path.join(__dirname, 'dashConfig.json');
+const defaultDashConfig = {
+  ticketCreateRoles: [config.roles.users],
+  ticketClaimRoles:  [config.roles.bot],
+};
 
 function loadDashConfig() {
-  if (!fs.existsSync(dashConfigPath))
-    return {
-      ticketCreateRoles: [config.roles.users],
-      ticketClaimRoles: [config.roles.bot],
-    };
-  try {
-    return JSON.parse(fs.readFileSync(dashConfigPath, 'utf8'));
-  } catch {
-    return {
-      ticketCreateRoles: [config.roles.users],
-      ticketClaimRoles: [config.roles.bot],
-    };
-  }
+  if (!fs.existsSync(dashConfigPath)) return { ...defaultDashConfig };
+  try { return JSON.parse(fs.readFileSync(dashConfigPath, 'utf8')); }
+  catch { return { ...defaultDashConfig }; }
 }
-
 function saveDashConfig(data) {
-  fs.writeFileSync(dashConfigPath, JSON.stringify(data, null, 2));
+  try { fs.writeFileSync(dashConfigPath, JSON.stringify(data, null, 2)); }
+  catch (e) { console.error('saveDashConfig error:', e.message); }
 }
 
 let dashConfig = loadDashConfig();
 
-// ─── Ready ─────────────────────────────────────────────────────────────────────
+// ─── Ready ────────────────────────────────────────────────────────────────────
 client.once('ready', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  client.user.setActivity('Niko Robin | /ticket', { type: 0 });
+  console.log(`✅ Logged in as ${client.user.tag} (${client.user.id})`);
+  console.log(`🏠 Serving guild: ${GUILD_ID}`);
+  client.user.setActivity('Niko Robin | /ticket', { type: ActivityType.Watching });
   await registerCommands();
 });
 
+// ─── Client Error Handlers ────────────────────────────────────────────────────
+client.on('error',      (e) => console.error('Discord client error:', e.message));
+client.on('warn',       (w) => console.warn('Discord warning:', w));
+client.on('shardError', (e) => console.error('Shard error:', e.message));
+
 // ─── Guild Member Add (Welcome + Auto-Role) ───────────────────────────────────
 client.on('guildMemberAdd', async (member) => {
-  if (member.guild.id !== process.env.GUILD_ID) return;
+  if (member.guild.id !== GUILD_ID) return;
 
   // Auto-role
   try {
     const role = member.guild.roles.cache.get(config.roles.users);
-    if (role) await member.roles.add(role);
+    if (role) {
+      await member.roles.add(role);
+      console.log(`✅ Auto-role given to ${member.user.tag}`);
+    }
   } catch (err) {
-    console.error('Auto-role error:', err);
+    console.error('Auto-role error:', err.message);
   }
 
   // Welcome embed
   try {
     const channel = member.guild.channels.cache.get(config.channels.welcome);
-    if (!channel) return;
+    if (!channel) { console.warn(`⚠️  Welcome channel ${config.channels.welcome} not found.`); return; }
 
-    const attachment = new AttachmentBuilder(
-      path.join(__dirname, 'assets', 'welcome.jpg'),
-      { name: 'welcome.jpg' }
-    );
+    const welcomeImg = path.join(__dirname, 'assets', 'welcome.jpg');
+    const files = fs.existsSync(welcomeImg)
+      ? [new AttachmentBuilder(welcomeImg, { name: 'welcome.jpg' })]
+      : [];
 
     const embed = new EmbedBuilder()
       .setColor(0xe91e63)
       .setTitle('✨ Welcome to the Server!')
-      .setDescription(
-        `Hey ${member}, welcome to **${member.guild.name}**! 🌸\nWe're glad you're here. Enjoy your stay!`
-      )
+      .setDescription(`Hey ${member}, welcome to **${member.guild.name}**! 🌸\nWe're glad you're here. Enjoy your stay!`)
       .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
-      .setImage('attachment://welcome.jpg')
       .setFooter({
         text: `Member #${member.guild.memberCount}`,
-        iconURL: member.guild.iconURL({ dynamic: true }),
+        iconURL: member.guild.iconURL({ dynamic: true }) ?? undefined,
       })
       .setTimestamp();
 
-    await channel.send({ embeds: [embed], files: [attachment] });
+    if (files.length) embed.setImage('attachment://welcome.jpg');
+    await channel.send({ embeds: [embed], files });
   } catch (err) {
-    console.error('Welcome error:', err);
+    console.error('Welcome embed error:', err.message);
   }
 });
 
 // ─── Guild Member Remove (Leave) ──────────────────────────────────────────────
 client.on('guildMemberRemove', async (member) => {
-  if (member.guild.id !== process.env.GUILD_ID) return;
+  if (member.guild.id !== GUILD_ID) return;
 
   try {
     const channel = member.guild.channels.cache.get(config.channels.leave);
-    if (!channel) return;
+    if (!channel) { console.warn(`⚠️  Leave channel ${config.channels.leave} not found.`); return; }
 
-    const attachment = new AttachmentBuilder(
-      path.join(__dirname, 'assets', 'leave.jpg'),
-      { name: 'leave.jpg' }
-    );
+    const leaveImg = path.join(__dirname, 'assets', 'leave.jpg');
+    const files = fs.existsSync(leaveImg)
+      ? [new AttachmentBuilder(leaveImg, { name: 'leave.jpg' })]
+      : [];
 
     const embed = new EmbedBuilder()
       .setColor(0x607d8b)
       .setTitle('👋 A Member Has Left')
-      .setDescription(
-        `**${member.user.tag}** has left the server.\nWe'll miss you! 💔`
-      )
+      .setDescription(`**${member.user.tag}** has left the server.\nWe'll miss you! 💔`)
       .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
-      .setImage('attachment://leave.jpg')
       .setFooter({
         text: `Members: ${member.guild.memberCount}`,
-        iconURL: member.guild.iconURL({ dynamic: true }),
+        iconURL: member.guild.iconURL({ dynamic: true }) ?? undefined,
       })
       .setTimestamp();
 
-    await channel.send({ embeds: [embed], files: [attachment] });
+    if (files.length) embed.setImage('attachment://leave.jpg');
+    await channel.send({ embeds: [embed], files });
   } catch (err) {
-    console.error('Leave error:', err);
+    console.error('Leave embed error:', err.message);
   }
 });
 
 // ─── Interaction Handler ──────────────────────────────────────────────────────
 client.on('interactionCreate', async (interaction) => {
-  // Slash commands
+
+  // ── Slash Commands ──────────────────────────────────────────────────────────
   if (interaction.isChatInputCommand()) {
-    if (interaction.guildId !== process.env.GUILD_ID) {
-      return interaction.reply({
-        content: '⛔ This bot only works in its designated server.',
-        ephemeral: true,
-      });
+    if (interaction.guildId !== GUILD_ID) {
+      return interaction.reply({ content: '⛔ This bot only works in its designated server.', ephemeral: true });
     }
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
     try {
       await command.execute(interaction, client, dashConfig);
     } catch (err) {
-      console.error(err);
-      const msg = { content: '❌ An error occurred.', ephemeral: true };
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(msg);
-      } else {
-        await interaction.reply(msg);
-      }
+      console.error(`Command error [${interaction.commandName}]:`, err.message);
+      const msg = { content: '❌ An error occurred executing that command.', ephemeral: true };
+      if (interaction.replied || interaction.deferred) await interaction.followUp(msg).catch(() => {});
+      else await interaction.reply(msg).catch(() => {});
     }
     return;
   }
 
-  // Button interactions
-  if (interaction.isButton()) {
-    const { customId, guild, channel, member } = interaction;
+  if (!interaction.isButton()) return;
+  const { customId, guild, channel, member } = interaction;
 
-    // ── Open Ticket ──────────────────────────────────────────────────────────
-    if (customId === 'open_ticket') {
-      await interaction.deferReply({ ephemeral: true });
+  // ── Open Ticket ───────────────────────────────────────────────────────────────
+  if (customId === 'open_ticket') {
+    await interaction.deferReply({ ephemeral: true });
 
-      // Check if user has permission to create tickets
-      const memberRoles = member.roles.cache.map((r) => r.id);
-      const canCreate =
-        dashConfig.ticketCreateRoles.some((rid) => memberRoles.includes(rid)) ||
-        member.permissions.has(PermissionFlagsBits.Administrator);
+    const memberRoles = member.roles.cache.map((r) => r.id);
+    const canCreate =
+      dashConfig.ticketCreateRoles.some((rid) => memberRoles.includes(rid)) ||
+      member.permissions.has(PermissionFlagsBits.Administrator);
 
-      if (!canCreate) {
-        return interaction.editReply({
-          content: '⛔ You do not have permission to open a ticket.',
-        });
-      }
+    if (!canCreate) return interaction.editReply({ content: '⛔ You do not have permission to open a ticket.' });
 
-      // Check for existing open ticket
-      const existingTicket = Object.entries(ticketStore).find(
-        ([, data]) => data.userId === member.id && !data.closed
-      );
-      if (existingTicket) {
-        return interaction.editReply({
-          content: `⚠️ You already have an open ticket: <#${existingTicket[0]}>`,
-        });
-      }
+    const existing = Object.entries(ticketStore).find(([, d]) => d.userId === member.id && !d.closed);
+    if (existing) return interaction.editReply({ content: `⚠️ You already have an open ticket: <#${existing[0]}>` });
 
-      ticketCounter++;
-      const ticketNum = String(ticketCounter).padStart(4, '0');
+    ticketCounter++;
+    const ticketNum = String(ticketCounter).padStart(4, '0');
 
-      // Find or create Tickets category
-      let category = guild.channels.cache.find(
-        (c) =>
-          c.type === ChannelType.GuildCategory &&
-          c.name.toLowerCase() === 'tickets'
-      );
-      if (!category) {
-        category = await guild.channels.create({
-          name: 'Tickets',
-          type: ChannelType.GuildCategory,
-        });
-      }
-
-      // Build permission overwrites
-      const overwrites = [
-        {
-          id: guild.roles.everyone,
-          deny: [PermissionFlagsBits.ViewChannel],
-        },
-        {
-          id: member.id,
-          allow: [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.SendMessages,
-            PermissionFlagsBits.ReadMessageHistory,
-          ],
-        },
-      ];
-
-      // Staff roles can also view
-      for (const roleId of dashConfig.ticketClaimRoles) {
-        overwrites.push({
-          id: roleId,
-          allow: [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.SendMessages,
-            PermissionFlagsBits.ReadMessageHistory,
-          ],
-        });
-      }
-
-      const ticketChannel = await guild.channels.create({
-        name: `ticket-${ticketNum}`,
-        type: ChannelType.GuildText,
-        parent: category.id,
-        permissionOverwrites: overwrites,
-      });
-
-      // Store
-      ticketStore[ticketChannel.id] = {
-        userId: member.id,
-        number: ticketNum,
-        claimedBy: null,
-        closed: false,
-        createdAt: Date.now(),
-      };
-      saveTickets(ticketStore);
-
-      // Send ticket embed with banner
-      const bannerAttachment = new AttachmentBuilder(
-        path.join(__dirname, 'assets', 'banner.jpg'),
-        { name: 'banner.jpg' }
-      );
-
-      const ticketEmbed = new EmbedBuilder()
-        .setColor(0xe91e63)
-        .setTitle(`🎟️ Ticket #${ticketNum}`)
-        .setDescription(
-          `Hello ${member}, support is on the way!\n\nDescribe your issue and a staff member will assist you shortly.`
-        )
-        .setImage('attachment://banner.jpg')
-        .setFooter({ text: 'Niko Robin • Ticket System' })
-        .setTimestamp();
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('claim_ticket')
-          .setLabel('✋ Claim')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('close_ticket')
-          .setLabel('🔒 Close')
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      await ticketChannel.send({
-        content: `${member} — Welcome to your ticket!`,
-        embeds: [ticketEmbed],
-        files: [bannerAttachment],
-        components: [row],
-      });
-
-      return interaction.editReply({
-        content: `✅ Your ticket has been created: ${ticketChannel}`,
-      });
+    let category = guild.channels.cache.find(
+      (c) => c.type === ChannelType.GuildCategory && c.name.toLowerCase() === 'tickets'
+    );
+    if (!category) {
+      category = await guild.channels.create({ name: 'Tickets', type: ChannelType.GuildCategory });
     }
 
-    // ── Claim Ticket ─────────────────────────────────────────────────────────
-    if (customId === 'claim_ticket') {
-      await interaction.deferReply({ ephemeral: true });
-
-      const memberRoles = member.roles.cache.map((r) => r.id);
-      const canClaim =
-        dashConfig.ticketClaimRoles.some((rid) => memberRoles.includes(rid)) ||
-        member.permissions.has(PermissionFlagsBits.Administrator);
-
-      if (!canClaim) {
-        return interaction.editReply({
-          content: '⛔ You do not have permission to claim tickets.',
-        });
-      }
-
-      const tData = ticketStore[channel.id];
-      if (!tData) {
-        return interaction.editReply({ content: '❌ Ticket data not found.' });
-      }
-      if (tData.claimedBy) {
-        return interaction.editReply({
-          content: `⚠️ This ticket is already claimed by <@${tData.claimedBy}>.`,
-        });
-      }
-
-      tData.claimedBy = member.id;
-      saveTickets(ticketStore);
-
-      await channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x4caf50)
-            .setDescription(
-              `✋ **${member.displayName}** has claimed this ticket and will assist you shortly.`
-            )
-            .setTimestamp(),
-        ],
-      });
-
-      return interaction.editReply({ content: '✅ You have claimed this ticket.' });
+    const overwrites = [
+      { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+    ];
+    for (const roleId of dashConfig.ticketClaimRoles) {
+      overwrites.push({ id: roleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] });
     }
 
-    // ── Close Ticket ──────────────────────────────────────────────────────────
-    if (customId === 'close_ticket') {
-      await interaction.deferReply({ ephemeral: true });
+    const ticketChannel = await guild.channels.create({
+      name: `ticket-${ticketNum}`,
+      type: ChannelType.GuildText,
+      parent: category.id,
+      permissionOverwrites: overwrites,
+    });
 
-      const tData = ticketStore[channel.id];
-      if (!tData) {
-        return interaction.editReply({ content: '❌ Ticket data not found.' });
-      }
+    ticketStore[ticketChannel.id] = { userId: member.id, number: ticketNum, claimedBy: null, closed: false, createdAt: Date.now() };
+    saveTickets(ticketStore);
 
-      const memberRoles = member.roles.cache.map((r) => r.id);
-      const canClose =
-        dashConfig.ticketClaimRoles.some((rid) => memberRoles.includes(rid)) ||
-        member.permissions.has(PermissionFlagsBits.Administrator) ||
-        tData.userId === member.id;
+    const bannerPath  = path.join(__dirname, 'assets', 'banner.jpg');
+    const bannerFiles = fs.existsSync(bannerPath) ? [new AttachmentBuilder(bannerPath, { name: 'banner.jpg' })] : [];
 
-      if (!canClose) {
-        return interaction.editReply({
-          content: '⛔ You cannot close this ticket.',
-        });
-      }
+    const ticketEmbed = new EmbedBuilder()
+      .setColor(0xe91e63)
+      .setTitle(`🎟️ Ticket #${ticketNum}`)
+      .setDescription(`Hello ${member}, support is on the way!\n\nPlease describe your issue and a staff member will assist you shortly.`)
+      .setFooter({ text: 'Niko Robin • Ticket System' })
+      .setTimestamp();
 
-      tData.closed = true;
-      saveTickets(ticketStore);
+    if (bannerFiles.length) ticketEmbed.setImage('attachment://banner.jpg');
 
-      await channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0xf44336)
-            .setDescription(
-              `🔒 Ticket closed by **${member.displayName}**.\nThis channel will be deleted in 5 seconds.`
-            )
-            .setTimestamp(),
-        ],
-      });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('claim_ticket').setLabel('✋ Claim').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Close').setStyle(ButtonStyle.Danger)
+    );
 
-      await interaction.editReply({ content: '✅ Ticket is being closed…' });
+    await ticketChannel.send({ content: `${member} — Welcome to your ticket!`, embeds: [ticketEmbed], files: bannerFiles, components: [row] });
+    return interaction.editReply({ content: `✅ Ticket created: ${ticketChannel}` });
+  }
 
-      setTimeout(async () => {
-        try {
-          delete ticketStore[channel.id];
-          saveTickets(ticketStore);
-          await channel.delete('Ticket closed');
-        } catch (e) {
-          console.error('Channel delete error:', e);
-        }
-      }, 5000);
-    }
+  // ── Claim Ticket ──────────────────────────────────────────────────────────────
+  if (customId === 'claim_ticket') {
+    await interaction.deferReply({ ephemeral: true });
+
+    const memberRoles = member.roles.cache.map((r) => r.id);
+    const canClaim =
+      dashConfig.ticketClaimRoles.some((rid) => memberRoles.includes(rid)) ||
+      member.permissions.has(PermissionFlagsBits.Administrator);
+
+    if (!canClaim) return interaction.editReply({ content: '⛔ You do not have permission to claim tickets.' });
+
+    const tData = ticketStore[channel.id];
+    if (!tData) return interaction.editReply({ content: '❌ Ticket data not found.' });
+    if (tData.claimedBy) return interaction.editReply({ content: `⚠️ Already claimed by <@${tData.claimedBy}>.` });
+
+    tData.claimedBy = member.id;
+    saveTickets(ticketStore);
+
+    await channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x4caf50)
+          .setDescription(`✋ **${member.displayName}** has claimed this ticket and will assist you shortly.`)
+          .setTimestamp(),
+      ],
+    });
+    return interaction.editReply({ content: '✅ You have claimed this ticket.' });
+  }
+
+  // ── Close Ticket ───────────────────────────────────────────────────────────────
+  if (customId === 'close_ticket') {
+    await interaction.deferReply({ ephemeral: true });
+
+    const tData = ticketStore[channel.id];
+    if (!tData) return interaction.editReply({ content: '❌ Ticket data not found.' });
+
+    const memberRoles = member.roles.cache.map((r) => r.id);
+    const canClose =
+      dashConfig.ticketClaimRoles.some((rid) => memberRoles.includes(rid)) ||
+      member.permissions.has(PermissionFlagsBits.Administrator) ||
+      tData.userId === member.id;
+
+    if (!canClose) return interaction.editReply({ content: '⛔ You cannot close this ticket.' });
+
+    tData.closed = true;
+    saveTickets(ticketStore);
+
+    await channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xf44336)
+          .setDescription(`🔒 Ticket closed by **${member.displayName}**.\nThis channel will be deleted in 5 seconds.`)
+          .setTimestamp(),
+      ],
+    });
+    await interaction.editReply({ content: '✅ Closing ticket…' });
+
+    setTimeout(async () => {
+      try {
+        delete ticketStore[channel.id];
+        saveTickets(ticketStore);
+        await channel.delete('Ticket closed');
+      } catch (e) { console.error('Channel delete error:', e.message); }
+    }, 5000);
   }
 });
 
@@ -443,10 +371,9 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
-// API: get guild roles
 app.get('/api/roles', async (req, res) => {
   try {
-    const guild = await client.guilds.fetch(process.env.GUILD_ID);
+    const guild = await client.guilds.fetch(GUILD_ID);
     await guild.roles.fetch();
     const roles = guild.roles.cache
       .filter((r) => !r.managed && r.id !== guild.id)
@@ -458,38 +385,45 @@ app.get('/api/roles', async (req, res) => {
   }
 });
 
-// API: get current dash config
-app.get('/api/config', (req, res) => {
-  res.json(dashConfig);
-});
+app.get('/api/config', (req, res) => res.json(dashConfig));
 
-// API: update dash config
 app.post('/api/config', (req, res) => {
   const { ticketCreateRoles, ticketClaimRoles } = req.body;
   if (!Array.isArray(ticketCreateRoles) || !Array.isArray(ticketClaimRoles)) {
     return res.status(400).json({ error: 'Invalid payload' });
   }
   dashConfig.ticketCreateRoles = ticketCreateRoles;
-  dashConfig.ticketClaimRoles = ticketClaimRoles;
+  dashConfig.ticketClaimRoles  = ticketClaimRoles;
   saveDashConfig(dashConfig);
   res.json({ success: true, dashConfig });
 });
 
-// API: ticket stats
 app.get('/api/stats', (req, res) => {
   const all = Object.values(ticketStore);
-  res.json({
-    total: all.length,
-    open: all.filter((t) => !t.closed).length,
-    closed: all.filter((t) => t.closed).length,
-  });
+  res.json({ total: all.length, open: all.filter((t) => !t.closed).length, closed: all.filter((t) => t.closed).length });
 });
 
-// Health-check for Render keep-alive
-app.get('/health', (req, res) => res.send('OK'));
+// Health-check for Render + UptimeRobot
+app.get('/health', (req, res) => res.status(200).send('OK'));
 
+// ─── CRITICAL: Bind to 0.0.0.0 — required on Render ──────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🌐 Dashboard running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🌐 Dashboard listening on 0.0.0.0:${PORT}`);
+});
 
-// ─── Login ────────────────────────────────────────────────────────────────────
-client.login(process.env.TOKEN);
+// ─── Discord Login ────────────────────────────────────────────────────────────
+console.log('⏳ Connecting to Discord…');
+client.login(TOKEN).catch((err) => {
+  console.error('❌ Discord login FAILED:', err.message);
+  console.error('   → Check TOKEN in Render environment variables.');
+  process.exit(1);
+});
+
+// ─── Process-level crash prevention ──────────────────────────────────────────
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Promise Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception (non-fatal):', err.message);
+});
